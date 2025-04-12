@@ -44,6 +44,22 @@
 C:\Espressif\tools\idf-python\3.11.2\python.exe -m ensurepip
 ```
 
+## 编译和烧录
+
+### 接线
+
+![alt text](a5bda1d85d1ffba84cb149a135769ae.jpg)
+
+### 编译
+
+使用 vscode 打开 `comp7310_2025_group_project\esp32c5\csi_recv` 或者 `comp7310_2025_group_project\esp32c5\csi_send` 目录
+
+在下方工具栏位中点击扳手图标编译，编译完成后可以通过闪电图标烧录
+
+如果弹出配置界面，请注意，flashType 选择 UART (串口), COM 口要选对
+
+![alt text](image-6.png)
+
 ## 参考链接
 
 [ESP32C5 官方文档](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c5/api-guides/tools/idf-tools.html#idf-tools-uninstall)
