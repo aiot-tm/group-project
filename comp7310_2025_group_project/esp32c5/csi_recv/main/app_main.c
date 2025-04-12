@@ -170,8 +170,8 @@ static void wifi_init()
     // You need to modify the ssid and password to match your Wi-Fi network.
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = "AIOT_5G",         
-            .password = "12345678",
+            .ssid = "Jian",         
+            .password = "1234567809",
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
             // UPDATES: only use this scan method when you want to connect your mobile phone's hotpot
             .scan_method = DEFAULT_SCAN_METHOD,
@@ -427,3 +427,4 @@ void app_main()
         return;
     }
 }
+ 

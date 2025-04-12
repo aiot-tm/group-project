@@ -127,6 +127,16 @@ void app_main()
              CONFIG_LESS_INTERFERENCE_CHANNEL, CONFIG_SEND_FREQUENCY, MAC2STR(CONFIG_CSI_SEND_MAC));
     
     // YOUR CODE HERE
+    for (uint8_t count = 0;; ++count) {
+        // 使用 ESP-NOW 发送数据包，触发 RX 端采集 CSI 数据
+        esp_err_t ret = esp_now_send(peer.peer_addr, &count, sizeof(uint8_t));
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "free_heap: %ld <%s> ESP-NOW send error", esp_get_free_heap_size(), esp_err_to_name(ret));
+        }
+        // 控制发送频率，确保 TX 与 RX 端在相同信道下进行同步采集
+        usleep(1000000 / CONFIG_SEND_FREQUENCY);
+    }
+
     ESP_LOGI(TAG, "================ GROUP INFO ================");
     const char *TEAM_MEMBER[] = {"a", "b", "c", "d"};
     const char *TEAM_UID[] = {"1", "2", "3", "4"};
@@ -144,3 +154,4 @@ void app_main()
         usleep(1000 * 1000 / CONFIG_SEND_FREQUENCY);
     }
 }
+ 
