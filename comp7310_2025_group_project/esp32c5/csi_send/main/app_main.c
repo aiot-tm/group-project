@@ -118,7 +118,7 @@ void app_main()
         .channel   = CONFIG_LESS_INTERFERENCE_CHANNEL,
         .ifidx     = WIFI_IF_STA,    
         .encrypt   = false,   
-        .peer_addr = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+        .peer_addr = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // Set the MAC address of the peer device to a invalid value
     };
     wifi_esp_now_init(peer);
 
@@ -130,6 +130,7 @@ void app_main()
     for (uint8_t count = 0;; ++count) {
         // 使用 ESP-NOW 发送数据包，触发 RX 端采集 CSI 数据
         esp_err_t ret = esp_now_send(peer.peer_addr, &count, sizeof(uint8_t));
+        ESP_LOGI(TAG, "sending with count: %d", count);
         if (ret != ESP_OK) {
             ESP_LOGW(TAG, "free_heap: %ld <%s> ESP-NOW send error", esp_get_free_heap_size(), esp_err_to_name(ret));
         }
