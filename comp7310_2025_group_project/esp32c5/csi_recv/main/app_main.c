@@ -45,6 +45,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+
 #include "credentials.h"
 
 #define SKIP_WIFI_CONNECTION 0 // set to 1 to skip Wi-Fi connection
@@ -76,9 +80,40 @@ static const char *TAG = "csi_recv";
 
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 
+typedef struct {
+  char data[2048];
+} csi_data_t;
+
+// Create a queue to hold CSI data
+static QueueHandle_t csi_queue = NULL;
+#define CSI_QUEUE_SIZE 10 // Adjust based on memory constraints and data rate
+
+static void csi_processing_task(void *pvParameters) {
+  csi_data_t csi_item;
+
+  while (1) {
+    // Add a timeout to avoid blocking indefinitely
+    if (xQueueReceive(csi_queue, &csi_item, pdMS_TO_TICKS(1000)) == pdTRUE) {
+      if (mqtt_client != NULL) {
+        esp_err_t err = esp_mqtt_client_publish(mqtt_client, "esp32/csi",
+                                                csi_item.data, 0, 1, 0);
+        if (err == ESP_OK) {
+          ESP_LOGI(TAG, "CSI data sent to MQTT");
+        } else {
+          ESP_LOGE(TAG, "Failed to publish CSI data with error code: %d", err);
+        }
+      } else {
+        ESP_LOGW(TAG, "MQTT client not ready, discarding CSI data");
+      }
+    }
+    // Always include this delay to prevent watchdog timeouts
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
 static void mqtt_send(esp_mqtt_client_handle_t client, const char *data) {
   if (client != NULL) {
-    esp_mqtt_client_enqueue(client, "esp32/csi", "hello!", 0, 1, 0, true);
+    esp_mqtt_client_publish(client, "esp32/csi", data, 0, 1, 0);
   } else {
     ESP_LOGE(TAG, "MQTT client is NULL. Cannot send data.");
   }
@@ -204,25 +239,29 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
     return;
   }
 
-  if (!info || !info->buf) {
-    ESP_LOGW(TAG, "<%s> wifi_csi_cb", esp_err_to_name(ESP_ERR_INVALID_ARG));
-    return;
-  }
-
   if (memcmp(info->mac, CONFIG_CSI_SEND_MAC, 6)) {
     return;
   }
 
-  wifi_pkt_rx_ctrl_phy_t *phy_info = (wifi_pkt_rx_ctrl_phy_t *)info;
+  // Only send every Nth CSI sample to reduce load
+  static int sample_counter = 0;
+  if (sample_counter++ % 5 != 0) { // Only process every 5th sample
+    return;
+  }
+
   static int s_count = 0;
+
   const wifi_pkt_rx_ctrl_t *rx_ctrl = &info->rx_ctrl;
 
-  // Buffer to store the string before printing
-  char csi_buffer[4096] = {0}; // Make sure the buffer is large enough
-  char *ptr = csi_buffer;
-  int remaining = sizeof(csi_buffer) - 1;
+  // Create an item to add to the queue
+  csi_data_t csi_item;
+  memset(csi_item.data, 0, sizeof(csi_item.data));
 
-  // Format the first part of the string
+  // Format the CSI data string
+  char *ptr = csi_item.data;
+  int remaining = sizeof(csi_item.data) - 1;
+
+  wifi_pkt_rx_ctrl_phy_t *phy_info = (wifi_pkt_rx_ctrl_phy_t *)info;
   int written = snprintf(
       ptr, remaining, "CSI_DATA,%d," MACSTR ",%d,%d,%d,%d,%d,%d,%d,%d,%d",
       s_count++, MAC2STR(info->mac), rx_ctrl->rssi, rx_ctrl->rate,
@@ -247,11 +286,12 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
   }
 
   // Add closing brackets
-  written = snprintf(ptr, remaining, "]\"\n");
+  written = snprintf(ptr, remaining, "]\"");
 
-  // Print the complete string using ESP_LOGI
-  // ESP_LOGI("CSI Buffer: ", "%s", csi_buffer);
-  // mqtt_send(mqtt_client, csi_buffer);
+  // Try to add the item to the queue without blocking
+  if (xQueueSend(csi_queue, &csi_item, 0) != pdTRUE) {
+    ESP_LOGW(TAG, "CSI queue full, discarding data");
+  }
 }
 
 /// Connect to Wi-Fi
@@ -345,7 +385,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
     break;
   case MQTT_EVENT_PUBLISHED:
-    ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+    // ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
     break;
   case MQTT_EVENT_DATA:
     ESP_LOGI(TAG, "MQTT_EVENT_DATA");
@@ -393,6 +433,16 @@ void app_main() {
     ret = nvs_flash_init();
   }
   ESP_ERROR_CHECK(ret);
+
+  // Create CSI data queue
+  csi_queue = xQueueCreate(CSI_QUEUE_SIZE, sizeof(csi_data_t));
+  if (csi_queue == NULL) {
+    ESP_LOGE(TAG, "Failed to create CSI queue");
+    return;
+  }
+
+  // Create task to process CSI data
+  xTaskCreate(csi_processing_task, "csi_proc", 81920, NULL, 5, NULL);
 
   wifi_init();
   print_mac_addr();
