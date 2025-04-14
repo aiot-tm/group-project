@@ -48,12 +48,13 @@
 
 #include "credentials.h"
 
-void mqtt_send() {
-  // TODO: Implement MQTT message sending using CSI data or Results
-  // NOTE: If you implement the algorithm on-board, you can return the results
-  // to the host, else send the CSI data.
-  return; // Placeholder
-}
+// void mqtt_send() {
+//   // TODO: Implement MQTT message sending using CSI data or Results
+//   // NOTE: If you implement the algorithm on-board, you can return the
+//   results
+//   // to the host, else send the CSI data.
+//   return; // Placeholder
+// }
 
 // #define SKIP_WIFI_CONNECTION
 
@@ -197,7 +198,7 @@ static void initialize_esp_now() {
 
 /// CSI Callback Function
 static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
-  if (!info || !info->buf){
+  if (!info || !info->buf) {
     return;
   }
 
@@ -212,19 +213,42 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
 
   wifi_pkt_rx_ctrl_phy_t *phy_info = (wifi_pkt_rx_ctrl_phy_t *)info;
   static int s_count = 0;
-
   const wifi_pkt_rx_ctrl_t *rx_ctrl = &info->rx_ctrl;
-  ets_printf("CSI_DATA,%d," MACSTR ",%d,%d,%d,%d,%d,%d,%d,%d,%d", s_count++,
-             MAC2STR(info->mac), rx_ctrl->rssi, rx_ctrl->rate,
-             rx_ctrl->noise_floor, phy_info->fft_gain, phy_info->agc_gain,
-             rx_ctrl->channel, rx_ctrl->timestamp, rx_ctrl->sig_len,
-             rx_ctrl->rx_state);
-  ets_printf(",%d,%d,\"[%d", info->len, info->first_word_invalid, info->buf[0]);
 
-  for (int i = 1; i < info->len; i++) {
-    ets_printf(",%d", info->buf[i]);
+  // Buffer to store the string before printing
+  char csi_buffer[4096] = {0}; // Make sure the buffer is large enough
+  char *ptr = csi_buffer;
+  int remaining = sizeof(csi_buffer) - 1;
+
+  // Format the first part of the string
+  int written = snprintf(
+      ptr, remaining, "CSI_DATA,%d," MACSTR ",%d,%d,%d,%d,%d,%d,%d,%d,%d",
+      s_count++, MAC2STR(info->mac), rx_ctrl->rssi, rx_ctrl->rate,
+      rx_ctrl->noise_floor, phy_info->fft_gain, phy_info->agc_gain,
+      rx_ctrl->channel, rx_ctrl->timestamp, rx_ctrl->sig_len,
+      rx_ctrl->rx_state);
+
+  ptr += written;
+  remaining -= written;
+
+  // Add the second part
+  written = snprintf(ptr, remaining, ",%d,%d,\"[%d", info->len,
+                     info->first_word_invalid, info->buf[0]);
+  ptr += written;
+  remaining -= written;
+
+  // Add the array values
+  for (int i = 1; i < info->len && remaining > 0; i++) {
+    written = snprintf(ptr, remaining, ",%d", info->buf[i]);
+    ptr += written;
+    remaining -= written;
   }
-  ets_printf("]\"\n");
+
+  // Add closing brackets
+  written = snprintf(ptr, remaining, "]\"\n");
+
+  // Print the complete string using ESP_LOGI
+  // ESP_LOGI("CSI", "%s", csi_buffer);
 }
 
 /// Connect to Wi-Fi
@@ -267,7 +291,7 @@ static void wifi_csi_init() {
   ESP_ERROR_CHECK(esp_wifi_set_csi(true));
 }
 
-void print_mac() {
+void print_mac_addr() {
   uint8_t mac[6];
   esp_err_t ret = esp_wifi_get_mac(WIFI_IF_STA, mac);
   if (ret == ESP_OK) {
@@ -275,6 +299,87 @@ void print_mac() {
   } else {
     ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(ret));
   }
+}
+
+static void log_error_if_nonzero(const char *message, int error_code) {
+  if (error_code != 0) {
+    ESP_LOGE(TAG, "Last error %s: 0x%x", message, error_code);
+  }
+}
+
+/*
+ * @brief Event handler registered to receive MQTT events
+ *
+ *  This function is called by the MQTT client event loop.
+ *
+ * @param handler_args user data registered to the event.
+ * @param base Event base for the handler(always MQTT Base in this example).
+ * @param event_id The id for the received event.
+ * @param event_data The data for the event, esp_mqtt_event_handle_t.
+ */
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
+                               int32_t event_id, void *event_data) {
+  ESP_LOGD(TAG,
+           "Event dispatched from event loop base=%s, event_id=%" PRIi32 "",
+           base, event_id);
+  esp_mqtt_event_handle_t event = event_data;
+  esp_mqtt_client_handle_t client = event->client;
+  int msg_id;
+  switch ((esp_mqtt_event_id_t)event_id) {
+  case MQTT_EVENT_CONNECTED:
+    ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+    msg_id = esp_mqtt_client_publish(client, "esp32/log", "esp32 connected!", 0,
+                                     1, 0);
+    msg_id = esp_mqtt_client_subscribe(client, "esp32/log", 0);
+    msg_id = esp_mqtt_client_subscribe(client, "esp32/data", 0);
+    break;
+  case MQTT_EVENT_DISCONNECTED:
+    ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+    break;
+
+  case MQTT_EVENT_SUBSCRIBED:
+    ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+    break;
+  case MQTT_EVENT_UNSUBSCRIBED:
+    ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
+    break;
+  case MQTT_EVENT_PUBLISHED:
+    ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+    break;
+  case MQTT_EVENT_DATA:
+    ESP_LOGI(TAG, "MQTT_EVENT_DATA");
+    printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
+    printf("DATA=%.*s\r\n", event->data_len, event->data);
+    break;
+  case MQTT_EVENT_ERROR:
+    ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
+    if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
+      log_error_if_nonzero("reported from esp-tls",
+                           event->error_handle->esp_tls_last_esp_err);
+      log_error_if_nonzero("reported from tls stack",
+                           event->error_handle->esp_tls_stack_err);
+      log_error_if_nonzero("captured as transport's socket errno",
+                           event->error_handle->esp_transport_sock_errno);
+      ESP_LOGI(TAG, "Last errno string (%s)",
+               strerror(event->error_handle->esp_transport_sock_errno));
+    }
+    break;
+  default:
+    ESP_LOGI(TAG, "Other event id:%d", event->event_id);
+    break;
+  }
+}
+
+void mqtt_app_start(void) {
+  esp_mqtt_client_config_t mqtt_cfg = {
+      .broker.address.uri = COMPUTER_IP,
+  };
+  esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
+  /* The last argument may be used to pass data to the event handler, in this
+   * example mqtt_event_handler */
+  esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler,
+                                 NULL);
+  esp_mqtt_client_start(client);
 }
 
 void app_main() {
@@ -288,7 +393,7 @@ void app_main() {
   ESP_ERROR_CHECK(ret);
 
   wifi_init();
-  print_mac();
+  print_mac_addr();
 
 #ifndef SKIP_WIFI_CONNECTION
   if (!try_connect_to_wifi_with_timeout(20)) {
@@ -299,4 +404,6 @@ void app_main() {
 
   initialize_esp_now();
   wifi_csi_init();
+
+  mqtt_app_start();
 }
