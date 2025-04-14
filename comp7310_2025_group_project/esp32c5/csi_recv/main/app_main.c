@@ -39,12 +39,14 @@
 #include "esp_netif.h"
 #include "esp_now.h"
 #include "esp_wifi.h"
+#include "mqtt_client.h"
 #include "nvs_flash.h"
 #include "rom/ets_sys.h"
-#include "mqtt_client.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "credentials.h"
 
 void mqtt_send() {
   // TODO: Implement MQTT message sending using CSI data or Results
@@ -74,8 +76,9 @@ void mqtt_send() {
 #endif /*CONFIG_EXAMPLE_SCAN_METHOD*/
 //
 
-static const uint8_t CONFIG_CSI_SEND_MAC[] = {0x1a, 0x00, 0x00,
+static const uint8_t CONFIG_CSI_SEND_MAC[] = {0x50, 0x10, 0x00,
                                               0x00, 0x00, 0x00};
+
 static const char *TAG = "csi_recv";
 typedef struct {
   unsigned : 32; /**< reserved */
@@ -141,12 +144,12 @@ static void wifi_init() {
   wifi_config_t wifi_config = {
       .sta =
           {
-              .ssid = "DannyHallo",
-              .password = "88888888",
+              .ssid = WIFI_SSID,
+              .password = WIFI_PASSWORD,
               .threshold.authmode = WIFI_AUTH_WPA2_PSK,
               // UPDATES: only use this scan method when you want to connect
               // your mobile phone's hotpot
-              .scan_method = DEFAULT_SCAN_METHOD,
+              // .scan_method = DEFAULT_SCAN_METHOD,
               //
 
               .pmf_cfg = {.capable = true, .required = false},
@@ -186,16 +189,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 
 //------------------------------------------------------ESP-NOW
 // Initialize------------------------------------------------------
-static void wifi_esp_now_init(esp_now_peer_info_t peer) {
+static void wifi_esp_now_init() {
   ESP_ERROR_CHECK(esp_now_init());
   ESP_ERROR_CHECK(esp_now_set_pmk((uint8_t *)"pmk1234567890123"));
-  esp_now_rate_config_t rate_config = {
-      .phymode = CONFIG_ESP_NOW_PHYMODE,
-      .rate = CONFIG_ESP_NOW_RATE, //  WIFI_PHY_RATE_MCS0_LGI,
-      .ersu = false,
-      .dcm = false};
-  ESP_ERROR_CHECK(esp_now_add_peer(&peer));
-  ESP_ERROR_CHECK(esp_now_set_peer_rate_config(peer.peer_addr, &rate_config));
   ESP_LOGI(TAG, "================ ESP NOW Ready ================");
   ESP_LOGI(TAG, "esp_now_init finished.");
 }
@@ -207,10 +203,6 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
     return;
 
   ESP_LOGI(TAG, "CSI callback triggered");
-
-  ets_printf("CSI_DATA,%d," MACSTR ",%d,%d,%d,%d\n", info->len,
-             MAC2STR(info->mac), info->rx_ctrl.rssi, info->rx_ctrl.rate,
-             info->rx_ctrl.noise_floor, info->rx_ctrl.channel);
 
   if (!info || !info->buf) {
     ESP_LOGW(TAG, "<%s> wifi_csi_cb", esp_err_to_name(ESP_ERR_INVALID_ARG));
@@ -228,28 +220,7 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
   wifi_pkt_rx_ctrl_phy_t *phy_info = (wifi_pkt_rx_ctrl_phy_t *)info;
   static int s_count = 0;
 
-#if CONFIG_GAIN_CONTROL
-  static uint16_t agc_gain_sum = 0;
-  static uint16_t fft_gain_sum = 0;
-  static uint8_t agc_gain_force_value = 0;
-  static uint8_t fft_gain_force_value = 0;
-  if (s_count < 100) {
-    agc_gain_sum += phy_info->agc_gain;
-    fft_gain_sum += phy_info->fft_gain;
-  } else if (s_count == 100) {
-    agc_gain_force_value = agc_gain_sum / 100;
-    fft_gain_force_value = fft_gain_sum / 100;
-#if CONFIG_FORCE_GAIN
-    phy_fft_scale_force(1, fft_gain_force_value);
-    phy_force_rx_gain(1, agc_gain_force_value);
-#endif
-    ESP_LOGI(TAG, "fft_force %d, agc_force %d", fft_gain_force_value,
-             agc_gain_force_value);
-  }
-#endif
-
   const wifi_pkt_rx_ctrl_t *rx_ctrl = &info->rx_ctrl;
-  ESP_LOGI(TAG, "================ CSI RECV via Serial Port ================");
   ets_printf("CSI_DATA,%d," MACSTR ",%d,%d,%d,%d,%d,%d,%d,%d,%d", s_count++,
              MAC2STR(info->mac), rx_ctrl->rssi, rx_ctrl->rate,
              rx_ctrl->noise_floor, phy_info->fft_gain, phy_info->agc_gain,
@@ -313,35 +284,27 @@ void app_main() {
   // Try to connect to WiFi
   ESP_LOGI(TAG, "Connecting to WiFi...");
 
-  bool wifi_connected = true;
+  bool wifi_connected = false;
 
   // Wait for Wi-Fi connection
-  //   int retry_count = 0;
-  //   bool wifi_connected = false;
-  //   while (!wifi_connected && retry_count < 20) {
-  //     vTaskDelay(pdMS_TO_TICKS(1000));
-  //     retry_count++;
-  //     ESP_LOGI(TAG, "Waiting for Wi-Fi connection... (%d/20)", retry_count);
+  int retry_count = 0;
+  while (!wifi_connected && retry_count < 20) {
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    retry_count++;
+    ESP_LOGI(TAG, "Waiting for Wi-Fi connection... (%d/20)", retry_count);
 
-  //     wifi_ap_record_t ap_info;
-  //     if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-  //       ESP_LOGI(TAG, "Connected to SSID: %s, RSSI: %d, Channel: %d",
-  //                ap_info.ssid, ap_info.rssi, ap_info.primary);
-  //       wifi_connected = true;
-  //     }
-  //   }
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+      ESP_LOGI(TAG, "Connected to SSID: %s, RSSI: %d, Channel: %d",
+               ap_info.ssid, ap_info.rssi, ap_info.primary);
+      wifi_connected = true;
+    }
+  }
 
   // initialize ESP-NOW
   if (wifi_connected) {
-    esp_now_peer_info_t peer = {
-        .channel = CONFIG_LESS_INTERFERENCE_CHANNEL,
-        .ifidx = WIFI_IF_STA,
-        .encrypt = false,
-        .peer_addr = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
-    };
-
-    wifi_esp_now_init(peer); // Initialize ESP-NOW Communication
-    wifi_csi_init();         // Initialize CSI Collection
+    wifi_esp_now_init(); // Initialize ESP-NOW Communication
+    wifi_csi_init();     // Initialize CSI Collection
 
   } else {
     ESP_LOGI(TAG, "WiFi connection failed");
