@@ -59,6 +59,42 @@ C:\Espressif\tools\idf-python\3.11.2\python.exe -m ensurepip
 
 ![alt text](image-6.png)
 
+## MQTT
+
+### 下载
+
+https://mosquitto.org/download/
+
+- 在有管理员权限的 cmd 中开启服务
+
+```shell
+net start mosquitto
+```
+
+### 验证
+
+通过下方命令，检查监听端口是否存在
+
+```shell
+netstat -a
+```
+
+### 一个简单测试
+
+- 打开一个 cmd
+
+```shell
+"C:/Program Files/mosquitto/mosquitto_sub" -t some_name -h localhost
+```
+
+- 打开另一个 cmd
+
+```shell
+"C:/Program Files/mosquitto/mosquitto_pub" -t some_name -h localhost -m "hello world!"
+```
+
+TCP 127.0.0.1:1883
+
 ## 参考链接
 
 [ESP32C5 官方文档](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c5/api-guides/tools/idf-tools.html#idf-tools-uninstall)
