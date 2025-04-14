@@ -197,21 +197,16 @@ static void initialize_esp_now() {
 
 /// CSI Callback Function
 static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
-  if (!info || !info->buf)
+  if (!info || !info->buf){
     return;
-
-  ESP_LOGI(TAG, "CSI callback triggered");
+  }
 
   if (!info || !info->buf) {
     ESP_LOGW(TAG, "<%s> wifi_csi_cb", esp_err_to_name(ESP_ERR_INVALID_ARG));
     return;
   }
 
-  ESP_LOGI(TAG, "Received MAC: " MACSTR ", Expected MAC: " MACSTR,
-           MAC2STR(info->mac), MAC2STR(CONFIG_CSI_SEND_MAC));
-
   if (memcmp(info->mac, CONFIG_CSI_SEND_MAC, 6)) {
-    ESP_LOGI(TAG, "MAC address doesn't match, skipping packet");
     return;
   }
 
