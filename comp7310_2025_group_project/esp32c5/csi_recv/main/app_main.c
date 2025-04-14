@@ -45,13 +45,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
 #include "credentials.h"
-
-#define SKIP_WIFI_CONNECTION 0 // set to 1 to skip Wi-Fi connection
 
 #define CONFIG_WIFI_BAND_MODE WIFI_BAND_MODE_5G_ONLY
 #define CONFIG_WIFI_2G_BANDWIDTHS WIFI_BW_HT20
@@ -95,13 +92,9 @@ static void csi_processing_task(void *pvParameters) {
     // Add a timeout to avoid blocking indefinitely
     if (xQueueReceive(csi_queue, &csi_item, pdMS_TO_TICKS(1000)) == pdTRUE) {
       if (mqtt_client != NULL) {
-        esp_err_t err = esp_mqtt_client_publish(mqtt_client, "esp32/csi",
-                                                csi_item.data, 0, 1, 0);
-        if (err == ESP_OK) {
-          ESP_LOGI(TAG, "CSI data sent to MQTT");
-        } else {
-          ESP_LOGE(TAG, "Failed to publish CSI data with error code: %d", err);
-        }
+        esp_mqtt_client_publish(mqtt_client, "esp32/csi", csi_item.data, 0, 1,
+                                0);
+        // ESP_LOGI(TAG, "CSI data sent to MQTT");
       } else {
         ESP_LOGW(TAG, "MQTT client not ready, discarding CSI data");
       }
@@ -189,7 +182,6 @@ void wifi_init() {
               // your mobile phone's hotpot
               // .scan_method = DEFAULT_SCAN_METHOD,
               //
-
               .pmf_cfg = {.capable = true, .required = false},
           },
   };
@@ -243,13 +235,14 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
     return;
   }
 
-  // Only send every Nth CSI sample to reduce load
   static int sample_counter = 0;
-  if (sample_counter++ % 5 != 0) { // Only process every 5th sample
+  if (sample_counter++ % 5 != 0) {
     return;
   }
 
   static int s_count = 0;
+
+  ESP_LOGI(TAG, "CSI data received: %d", s_count);
 
   const wifi_pkt_rx_ctrl_t *rx_ctrl = &info->rx_ctrl;
 
@@ -372,7 +365,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
     // esp_mqtt_client_publish(client, "esp32/csi", "esp32 connected!", 0, 1,
     // 0);
-    mqtt_send(client, "esp32 connected!");
+    // mqtt_send(client, "esp32 connected!");
     // esp_mqtt_client_subscribe(client, "esp32/csi", 0);
     break;
   case MQTT_EVENT_DISCONNECTED:
@@ -447,12 +440,10 @@ void app_main() {
   wifi_init();
   print_mac_addr();
 
-#if SKIP_WIFI_CONNECTION
   if (!try_connect_to_wifi_with_timeout(20)) {
     ESP_LOGE(TAG, "Failed to connect to Wi-Fi. Exiting...");
     return;
   }
-#endif
 
   initialize_esp_now();
   wifi_csi_init();

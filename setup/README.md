@@ -112,8 +112,6 @@ netstat -a
 ipconfig
 ```
 
-TCP 127.0.0.1:1883
-
 ## 参考链接
 
 [ESP32C5 官方文档](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c5/api-guides/tools/idf-tools.html#idf-tools-uninstall)
