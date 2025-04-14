@@ -41,22 +41,13 @@
 #include "esp_wifi.h"
 #include "mqtt_client.h"
 #include "nvs_flash.h"
-#include "rom/ets_sys.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "credentials.h"
 
-// void mqtt_send() {
-//   // TODO: Implement MQTT message sending using CSI data or Results
-//   // NOTE: If you implement the algorithm on-board, you can return the
-//   results
-//   // to the host, else send the CSI data.
-//   return; // Placeholder
-// }
-
-// #define SKIP_WIFI_CONNECTION
+#define SKIP_WIFI_CONNECTION 0 // set to 1 to skip Wi-Fi connection
 
 #define CONFIG_WIFI_BAND_MODE WIFI_BAND_MODE_5G_ONLY
 #define CONFIG_WIFI_2G_BANDWIDTHS WIFI_BW_HT20
@@ -82,6 +73,17 @@ static const uint8_t CONFIG_CSI_SEND_MAC[] = {0x50, 0x10, 0x00,
                                               0x00, 0x00, 0x00};
 
 static const char *TAG = "csi_recv";
+
+static esp_mqtt_client_handle_t mqtt_client = NULL;
+
+static void mqtt_send(esp_mqtt_client_handle_t client, const char *data) {
+  if (client != NULL) {
+    esp_mqtt_client_enqueue(client, "esp32/csi", "hello!", 0, 1, 0, true);
+  } else {
+    ESP_LOGE(TAG, "MQTT client is NULL. Cannot send data.");
+  }
+}
+
 typedef struct {
   unsigned : 32; /**< reserved */
   unsigned : 32; /**< reserved */
@@ -248,7 +250,8 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
   written = snprintf(ptr, remaining, "]\"\n");
 
   // Print the complete string using ESP_LOGI
-  // ESP_LOGI("CSI", "%s", csi_buffer);
+  // ESP_LOGI("CSI Buffer: ", "%s", csi_buffer);
+  // mqtt_send(mqtt_client, csi_buffer);
 }
 
 /// Connect to Wi-Fi
@@ -324,19 +327,17 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
            base, event_id);
   esp_mqtt_event_handle_t event = event_data;
   esp_mqtt_client_handle_t client = event->client;
-  int msg_id;
   switch ((esp_mqtt_event_id_t)event_id) {
   case MQTT_EVENT_CONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-    msg_id = esp_mqtt_client_publish(client, "esp32/log", "esp32 connected!", 0,
-                                     1, 0);
-    msg_id = esp_mqtt_client_subscribe(client, "esp32/log", 0);
-    msg_id = esp_mqtt_client_subscribe(client, "esp32/data", 0);
+    // esp_mqtt_client_publish(client, "esp32/csi", "esp32 connected!", 0, 1,
+    // 0);
+    mqtt_send(client, "esp32 connected!");
+    // esp_mqtt_client_subscribe(client, "esp32/csi", 0);
     break;
   case MQTT_EVENT_DISCONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
     break;
-
   case MQTT_EVENT_SUBSCRIBED:
     ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
     break;
@@ -370,7 +371,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
   }
 }
 
-void mqtt_app_start(void) {
+esp_mqtt_client_handle_t mqtt_app_start(void) {
   esp_mqtt_client_config_t mqtt_cfg = {
       .broker.address.uri = COMPUTER_IP,
   };
@@ -380,6 +381,7 @@ void mqtt_app_start(void) {
   esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler,
                                  NULL);
   esp_mqtt_client_start(client);
+  return client;
 }
 
 void app_main() {
@@ -395,7 +397,7 @@ void app_main() {
   wifi_init();
   print_mac_addr();
 
-#ifndef SKIP_WIFI_CONNECTION
+#if SKIP_WIFI_CONNECTION
   if (!try_connect_to_wifi_with_timeout(20)) {
     ESP_LOGE(TAG, "Failed to connect to Wi-Fi. Exiting...");
     return;
@@ -405,5 +407,6 @@ void app_main() {
   initialize_esp_now();
   wifi_csi_init();
 
-  mqtt_app_start();
+  // Initialize MQTT client and store handle in global variable
+  mqtt_client = mqtt_app_start();
 }

@@ -65,7 +65,25 @@ C:\Espressif\tools\idf-python\3.11.2\python.exe -m ensurepip
 
 https://mosquitto.org/download/
 
-- 在有管理员权限的 cmd 中开启 / 关闭 mosquito broker
+### 配置 broker
+
+编辑 `C:\Program Files\mosquitto\mosquitto.conf`
+添加下面内容
+
+```plaintext
+listener 1883
+allow_anonymous true
+```
+
+### 配置防火墙
+
+![alt text](image-10.png)
+
+![alt text](image-11.png)
+
+### 开启服务
+
+在有管理员权限的 cmd 中开启 / 关闭 mosquito broker
 
 ```shell
 net stop mosquitto
@@ -80,21 +98,12 @@ net start mosquitto
 netstat -a
 ```
 
-### 一个简单测试
+### 测试
 
-- 打开一个 cmd，建立一个用本机作为 broker 的 subscriber，关注 `esp/csi_data` 下的信息，使用 verbose ouput
-
-```shell
-"C:\Program Files\mosquitto\mosquitto_sub" -h test.mosquitto.org -t "esp32/log" -v
-"C:\Program Files\mosquitto\mosquitto_sub" -h test.mosquitto.org -t "esp32/data" -v
-
-"C:/Program Files/mosquitto/mosquitto_sub" -t esp/csi_data -h localhost -v
-```
-
-- 打开另一个 cmd
+- 打开一个 cmd，建立一个用本机作为 broker 的 subscriber，关注 `esp32/csi` 下的信息，使用 verbose ouput
 
 ```shell
-"C:/Program Files/mosquitto/mosquitto_pub" -t esp/csi_data -h localhost -m "hello world!"
+"C:\Program Files\mosquitto\mosquitto_sub" -h localhost -t "esp32/csi" -v
 ```
 
 ### 找到本机 IP
