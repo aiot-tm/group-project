@@ -109,7 +109,7 @@ void app_main() {
       .channel = CONFIG_LESS_INTERFERENCE_CHANNEL,
       .ifidx = WIFI_IF_STA,
       .encrypt = false,
-      .peer_addr = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+      .peer_addr = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
   };
   wifi_esp_now_init(peer);
 

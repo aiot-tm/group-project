@@ -55,7 +55,8 @@ void mqtt_send() {
   return; // Placeholder
 }
 
-#define CONFIG_LESS_INTERFERENCE_CHANNEL 40
+// #define SKIP_WIFI_CONNECTION
+
 #define CONFIG_WIFI_BAND_MODE WIFI_BAND_MODE_5G_ONLY
 #define CONFIG_WIFI_2G_BANDWIDTHS WIFI_BW_HT20
 #define CONFIG_WIFI_5G_BANDWIDTHS WIFI_BW_HT20
@@ -117,9 +118,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data);
 static bool wifi_connected = false;
 
-//------------------------------------------------------WiFi
-// Initialize------------------------------------------------------
-static void wifi_init() {
+/// Wi-Fi Initialization
+void wifi_init() {
   ESP_ERROR_CHECK(esp_event_loop_create_default());
   ESP_ERROR_CHECK(esp_netif_init());
   esp_netif_create_default_wifi_sta();
@@ -187,17 +187,15 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
   }
 }
 
-//------------------------------------------------------ESP-NOW
-// Initialize------------------------------------------------------
-static void wifi_esp_now_init() {
+/// ESP-NOW Initialization
+static void initialize_esp_now() {
   ESP_ERROR_CHECK(esp_now_init());
   ESP_ERROR_CHECK(esp_now_set_pmk((uint8_t *)"pmk1234567890123"));
   ESP_LOGI(TAG, "================ ESP NOW Ready ================");
   ESP_LOGI(TAG, "esp_now_init finished.");
 }
 
-//------------------------------------------------------CSI
-// Callback------------------------------------------------------
+/// CSI Callback Function
 static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
   if (!info || !info->buf)
     return;
@@ -234,8 +232,25 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
   ets_printf("]\"\n");
 }
 
-//------------------------------------------------------CSI Config
-// Initialize------------------------------------------------------
+/// Connect to Wi-Fi
+bool try_connect_to_wifi_with_timeout(int timeout) {
+  int retry_count = 0;
+  while (retry_count < timeout) {
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    retry_count++;
+    ESP_LOGI(TAG, "Waiting for Wi-Fi connection... (%d/%d)", retry_count,
+             timeout);
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+      ESP_LOGI(TAG, "Connected to SSID: %s, RSSI: %d, Channel: %d",
+               ap_info.ssid, ap_info.rssi, ap_info.primary);
+      return true;
+    }
+  }
+  return false;
+}
+
+/// CSI Config Initialize
 static void wifi_csi_init() {
   ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
   wifi_csi_config_t csi_config = {.enable = true,
@@ -257,12 +272,18 @@ static void wifi_csi_init() {
   ESP_ERROR_CHECK(esp_wifi_set_csi(true));
 }
 
-//------------------------------------------------------Main
-// Function------------------------------------------------------
+void print_mac() {
+  uint8_t mac[6];
+  esp_err_t ret = esp_wifi_get_mac(WIFI_IF_STA, mac);
+  if (ret == ESP_OK) {
+    ESP_LOGI(TAG, "Device MAC Address: " MACSTR, MAC2STR(mac));
+  } else {
+    ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(ret));
+  }
+}
+
 void app_main() {
-  /**
-   * @brief Initialize NVS
-   */
+  // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
       ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -271,43 +292,16 @@ void app_main() {
   }
   ESP_ERROR_CHECK(ret);
 
-  /**
-   * @brief Initialize Wi-Fi
-   */
   wifi_init();
+  print_mac();
 
-  // Get Device MAC Address
-  uint8_t mac[6];
-  esp_wifi_get_mac(WIFI_IF_STA, mac);
-  ESP_LOGI(TAG, "Device MAC Address: " MACSTR, MAC2STR(mac));
-
-  // Try to connect to WiFi
-  ESP_LOGI(TAG, "Connecting to WiFi...");
-
-  bool wifi_connected = false;
-
-  // Wait for Wi-Fi connection
-  int retry_count = 0;
-  while (!wifi_connected && retry_count < 20) {
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    retry_count++;
-    ESP_LOGI(TAG, "Waiting for Wi-Fi connection... (%d/20)", retry_count);
-
-    wifi_ap_record_t ap_info;
-    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-      ESP_LOGI(TAG, "Connected to SSID: %s, RSSI: %d, Channel: %d",
-               ap_info.ssid, ap_info.rssi, ap_info.primary);
-      wifi_connected = true;
-    }
-  }
-
-  // initialize ESP-NOW
-  if (wifi_connected) {
-    wifi_esp_now_init(); // Initialize ESP-NOW Communication
-    wifi_csi_init();     // Initialize CSI Collection
-
-  } else {
-    ESP_LOGI(TAG, "WiFi connection failed");
+#ifndef SKIP_WIFI_CONNECTION
+  if (!try_connect_to_wifi_with_timeout(20)) {
+    ESP_LOGE(TAG, "Failed to connect to Wi-Fi. Exiting...");
     return;
   }
+#endif
+
+  initialize_esp_now();
+  wifi_csi_init();
 }
