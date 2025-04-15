@@ -177,11 +177,9 @@ void wifi_init() {
           {
               .ssid = WIFI_SSID,
               .password = WIFI_PASSWORD,
-              .threshold.authmode = WIFI_AUTH_WPA2_PSK,
-              // UPDATES: only use this scan method when you want to connect
-              // your mobile phone's hotpot
-              // .scan_method = DEFAULT_SCAN_METHOD,
-              //
+              .threshold.authmode = AUTH_MODE,
+              // enable the line below only when using a mobile hotspot
+              .scan_method = DEFAULT_SCAN_METHOD,
               .pmf_cfg = {.capable = true, .required = false},
           },
   };
