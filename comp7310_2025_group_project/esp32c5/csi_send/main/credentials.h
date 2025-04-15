@@ -1,0 +1,10 @@
+#ifndef CREDITS_H
+#define CREDITS_H
+
+#define WIFI_SSID "Eddie"
+#define WIFI_PASSWORD "20020322"
+
+// WIFI_AUTH_OPEN / WIFI_AUTH_WPA2_PSK
+#define AUTH_MODE WIFI_AUTH_WPA2_PSK
+
+#endif // CREDITS_H
