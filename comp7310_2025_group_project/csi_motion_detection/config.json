@@ -1,0 +1,22 @@
+{
+  "motion_detector": {
+    "variance_threshold": 0.015,
+    "diff_threshold": 0.025,
+    "window_size": 5,
+    "noise_multiplier": 2.0,
+    "normalize": true,
+    "adaptation_rate": 0.05
+  },
+  "data_paths": {
+    "motion_dir": "data/motion_detection/evaluation_motion",
+    "static_dir": "data/motion_detection/evaluation_static",
+    "test_dir": "data/motion_detection/test",
+    "results_dir": "results"
+  },
+  "mqtt": {
+    "host": "localhost",
+    "port": 1883,
+    "topic_csi": "esp32/csi_data",
+    "topic_result": "esp32/motion_result"
+  }
+}
