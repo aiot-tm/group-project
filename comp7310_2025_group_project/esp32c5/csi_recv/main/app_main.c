@@ -60,7 +60,6 @@
 #define CONFIG_FORCE_GAIN 1
 #define CONFIG_GAIN_CONTROL CONFIG_FORCE_GAIN
 
-// UPDATE: Define parameters for scan method
 #if CONFIG_EXAMPLE_WIFI_ALL_CHANNEL_SCAN
 #define DEFAULT_SCAN_METHOD WIFI_ALL_CHANNEL_SCAN
 #elif CONFIG_EXAMPLE_WIFI_FAST_SCAN
@@ -68,7 +67,6 @@
 #else
 #define DEFAULT_SCAN_METHOD WIFI_FAST_SCAN
 #endif /*CONFIG_EXAMPLE_SCAN_METHOD*/
-//
 
 static const uint8_t CONFIG_CSI_SEND_MAC[] = {0x50, 0x10, 0x00,
                                               0x00, 0x00, 0x00};
@@ -170,8 +168,6 @@ void wifi_init() {
       IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL,
       &instance_got_ip));
 
-  // [3] YOUR CODE HERE
-  // You need to modify the ssid and password to match your Wi-Fi network.
   wifi_config_t wifi_config = {
       .sta =
           {
@@ -183,7 +179,6 @@ void wifi_init() {
               .pmf_cfg = {.capable = true, .required = false},
           },
   };
-  // [3] END OF YOUR CODE
 
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
   ESP_ERROR_CHECK(esp_wifi_start());
