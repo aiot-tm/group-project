@@ -15,7 +15,7 @@ class BreathingEstimator:
         """
         # Default configuration
         self.config = {
-            'window_size': 1500,  # 15 seconds * 100Hz
+            'window_size': 300,  # 15 seconds * 100Hz
             'overlap': 0.5,  # 50% overlap
             'bandpass_filter': {
                 'low_cut': 0.1,  # Hz
@@ -136,8 +136,8 @@ class BreathingEstimator:
         high_cut = self.config['bandpass_filter']['high_cut']
         order = self.config['bandpass_filter']['order']
 
-        # Assume 100Hz sampling rate
-        fs = 100.0
+        # Assume 100Hz sampling rate(20HZ for real)
+        fs = 20.0
 
         # Design filter
         nyq = 0.5 * fs
@@ -198,7 +198,7 @@ class BreathingEstimator:
             if timestamps is not None and len(timestamps) > end_idx:
                 window_times.append(timestamps[start_idx + window_size // 2])
             else:
-                window_times.append(start_idx / 100)  # Assume 100Hz sampling rate
+                window_times.append(start_idx / 20)  # Assume 100Hz sampling rate(20 for real)
 
         # Smooth breathing rate results
         if self.config['smoothing']['enabled'] and len(breathing_rates) > 1:
@@ -238,7 +238,7 @@ class BreathingEstimator:
 
         # Perform FFT
         fft_result = np.abs(np.fft.rfft(windowed_signal, n=nfft))
-        freqs = np.fft.rfftfreq(nfft, d=1 / 100)  # Assume 100Hz sampling rate
+        freqs = np.fft.rfftfreq(nfft, d=1 / 20)  # Assume 100Hz sampling rate(20HZ# )
 
         # Find peak in breathing frequency range
         min_freq = self.config['bandpass_filter']['low_cut']
@@ -272,7 +272,7 @@ class BreathingEstimator:
         combined_signal = np.mean(window_data, axis=1)
 
         # Detect peaks
-        peaks, _ = signal.find_peaks(combined_signal, distance=20)  # Minimum distance ~0.2 seconds
+        peaks, _ = signal.find_peaks(combined_signal, distance=4)  # Minimum distance ~0.2 seconds 最小距离~0.2秒@20Hz
 
         if len(peaks) < 2:
             # If too few peaks detected, return default value
@@ -283,7 +283,7 @@ class BreathingEstimator:
         avg_interval_samples = np.mean(peak_intervals)
 
         # Convert to seconds (assuming 100Hz sampling rate)
-        avg_interval_seconds = avg_interval_samples / 100
+        avg_interval_seconds = avg_interval_samples / 20
 
         # Calculate BPM
         breathing_rate = 60 / avg_interval_seconds

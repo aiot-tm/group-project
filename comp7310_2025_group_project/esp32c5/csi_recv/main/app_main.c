@@ -50,7 +50,7 @@
 
 #include "credentials.h"
 
-#define CONFIG_WIFI_BAND_MODE WIFI_BAND_MODE_5G_ONLY
+#define CONFIG_WIFI_BAND_MODE WIFI_BAND_MODE_2G_ONLY
 #define CONFIG_WIFI_2G_BANDWIDTHS WIFI_BW_HT20
 #define CONFIG_WIFI_5G_BANDWIDTHS WIFI_BW_HT20
 #define CONFIG_WIFI_2G_PROTOCOL WIFI_PROTOCOL_11N
@@ -280,6 +280,7 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
 
   // Add closing brackets
   written = snprintf(ptr, remaining, "]\"");
+
 
   // Try to add the item to the queue without blocking
   if (xQueueSend(csi_queue, &csi_item, 0) != pdTRUE) {

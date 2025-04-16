@@ -21,7 +21,8 @@ class MotionDetector:
             'window_size': 5,
             'noise_multiplier': 2.0,
             'normalize': True,
-            'adaptation_rate': 0.05
+            'adaptation_rate': 0.05,
+            'coherence_threshold': 0.7  # 子载波协同性阈值
         }
 
         # Update with provided config
@@ -248,35 +249,151 @@ class MotionDetector:
 
         return self.threshold
 
-    def detect(self, csi_data):
+    # 修改 _calculate_subcarrier_coherence 方法，增加错误处理
+    def _calculate_subcarrier_coherence(self, amplitude_data):
         """
-        检测CSI数据中是否有运动
+        计算子载波之间的相关性/协同性
 
         参数:
-        csi_data: 原始CSI数据 [sample, subcarrier, real/imag]
+        amplitude_data: 振幅数据，形状为[frames, subcarriers]
+
+        返回:
+        协同性分数 (0-1之间，1表示完全协同)
+        """
+        try:
+            # 获取子载波数量
+            n_frames, n_subcarriers = amplitude_data.shape
+
+            if n_subcarriers < 2 or n_frames < 3:
+                return 0.5  # 返回一个中等值，而不是0
+
+            # 计算每个子载波的变化率
+            changes = np.diff(amplitude_data, axis=0)
+
+            # 1. 计算变化方向的一致性
+            # 对每个时间点，检查不同子载波变化方向是否一致
+            change_directions = np.sign(changes)
+
+            # 对每个时间点计算方向一致性
+            direction_agreement = []
+            for t in range(changes.shape[0]):
+                # 获取当前时间点所有子载波的变化方向
+                directions = change_directions[t, :]
+                # 计算正方向和负方向的数量
+                pos_count = np.sum(directions > 0)
+                neg_count = np.sum(directions < 0)
+                # 取较大的一方，计算一致性比例
+                max_agreement = max(pos_count, neg_count) / n_subcarriers if n_subcarriers > 0 else 0.5
+                direction_agreement.append(max_agreement)
+
+            # 取平均值作为方向一致性指标
+            avg_direction_agreement = np.mean(direction_agreement) if direction_agreement else 0.5
+
+            # 2. 计算变化幅度的相关性
+            # 使用相关系数矩阵来量化不同子载波间的相关性
+            # 添加错误处理，防止NaN
+            try:
+                correlation_matrix = np.corrcoef(changes.T)
+                # 检查相关系数矩阵是否包含NaN值
+                if np.any(np.isnan(correlation_matrix)):
+                    avg_correlation = 0.5  # 如果有NaN，使用默认值
+                else:
+                    # 去除自相关(对角线)，计算平均相关系数
+                    np.fill_diagonal(correlation_matrix, 0)
+                    avg_correlation = np.mean(np.abs(correlation_matrix))
+            except Exception as e:
+                print(f"计算相关系数矩阵出错: {e}")
+                avg_correlation = 0.5  # 出错时使用默认值
+
+            # 综合得分 (可以调整权重)
+            coherence_score = 0.6 * avg_direction_agreement + 0.4 * avg_correlation
+
+            # 确保结果在0-1范围内
+            coherence_score = max(0.0, min(1.0, coherence_score))
+
+            return coherence_score
+
+        except Exception as e:
+            print(f"计算子载波协同性出错: {e}")
+            return 0.5  # 出错时返回一个中等值
+
+    # 修改 detect 方法中的逻辑判断部分
+    def detect(self, csi_data):
+        """
+        基于子载波相似度的CSI运动检测
+
+        参数:
+        csi_data: CSI数据，形状为[frames, subcarriers, 2]
 
         返回:
         检测结果字典
         """
-        # Preprocess data
-        processed = self.preprocess(csi_data)
+        # 1. 提取振幅
+        real = csi_data[:, :, 0]
+        imag = csi_data[:, :, 1]
+        amplitude = np.sqrt(real ** 2 + imag ** 2)
 
-        # Extract features
-        features = self.extract_features(processed)
+        # 2. 选择最有变化的子载波
+        variance_per_subcarrier = np.var(amplitude, axis=0)
+        top_k = 5  # 选择变化最大的5个子载波
+        top_subcarriers_idx = np.argsort(variance_per_subcarrier)[-top_k:]
 
-        # Adaptive threshold - considering environmental noise
-        noise_level = processed['noise_level']
-        adaptive_threshold = self.base_threshold * (1 + noise_level * self.config['noise_multiplier'])
+        # 3. 提取这些子载波的数据
+        selected_data = amplitude[:, top_subcarriers_idx]
 
-        # Motion detection - based on multiple features
-        is_motion = (features['amp_variance_mean'] > adaptive_threshold or
-                     features['amp_diff_mean_avg'] > self.config['diff_threshold'] or
-                     features['top_subcarriers_variance'] > adaptive_threshold * 1.2)
+        # 4. 计算相似度/重合度
+        # 归一化处理，便于比较
+        normalized_data = np.zeros_like(selected_data)
+        for i in range(top_k):
+            sc_data = selected_data[:, i]
+            min_val = np.min(sc_data)
+            max_val = np.max(sc_data)
+            if max_val > min_val:  # 避免除零
+                normalized_data[:, i] = (sc_data - min_val) / (max_val - min_val)
+            else:
+                normalized_data[:, i] = 0.5  # 设置默认值
 
-        # Return detection results
+        # 5. 计算子载波间的差异
+        subcarrier_diffs = []
+        for i in range(top_k):
+            for j in range(i + 1, top_k):
+                # 计算两个子载波的平均差异
+                diff = np.mean(np.abs(normalized_data[:, i] - normalized_data[:, j]))
+                subcarrier_diffs.append(diff)
+
+        # 6. 计算平均差异（相似度的反向指标）
+        if subcarrier_diffs:
+            avg_diff = np.mean(subcarrier_diffs)
+            similarity = 1.0 - avg_diff  # 转换为相似度，范围0-1
+        else:
+            similarity = 0.0
+
+        # 7. 计算当前振幅方差作为辅助指标
+        current_variance = np.mean(variance_per_subcarrier[top_subcarriers_idx])
+
+        # 8. 基于相似度判断运动
+        # 相似度高 + 方差大 = 运动
+        is_motion = similarity > 0.75 and current_variance > self.threshold
+
+        # 9. 添加状态平滑（可选）
+        if hasattr(self, 'prev_state'):
+            # 如果之前是运动状态，需要更低的相似度才会变为静止
+            if self.prev_state and similarity > 0.6:
+                is_motion = True
+            # 如果之前是静止状态，需要更高的相似度才会变为运动
+            elif not self.prev_state and similarity < 0.8:
+                is_motion = False
+
+        # 保存当前状态
+        self.prev_state = is_motion
+
+        # 返回结果
         return {
-            'motion_detected': bool(is_motion),
-            'features': features,
-            'threshold': adaptive_threshold,
-            'noise_level': noise_level
+            'motion_detected': is_motion,
+            'features': {
+                'amp_variance_mean': current_variance,
+                'subcarrier_similarity': similarity,
+            },
+            'threshold': self.threshold,
+            'coherence': similarity
         }

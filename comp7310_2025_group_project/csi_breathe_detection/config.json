@@ -1,6 +1,6 @@
 {
   "breathing_estimator": {
-    "window_size": 1500,
+    "window_size": 300,
     "overlap": 0.5,
     "bandpass_filter": {
       "low_cut": 0.1,
@@ -28,7 +28,7 @@
   "mqtt": {
     "host": "localhost",
     "port": 1883,
-    "topic_csi": "esp32/csi_data",
+    "topic_csi": "esp32/csi",
     "topic_result": "esp32/breathing_result"
   }
 }
