@@ -94,6 +94,68 @@ class CSIDataLoader:
 
         return loaded_files
 
+    # def _extract_csi_data(self, df):
+    #     """
+    #     从DataFrame中提取CSI数据
+    #
+    #     参数:
+    #     df: 包含CSI数据的DataFrame
+    #
+    #     返回:
+    #     3D numpy数组: [sample, subcarrier, real/imag]
+    #     """
+    #     csi_data_list = []
+    #     expected_length = None
+    #
+    #     for i, row in df.iterrows():
+    #         # Check 'data' column exists
+    #         if 'data' not in row:
+    #             continue
+    #
+    #         # Parse CSI data string
+    #         data_str = row['data']
+    #
+    #         # Extract data with regex
+    #         match = re.search(r'\[(.*)\]', data_str)
+    #         if not match:
+    #             continue
+    #
+    #         # Convert to numerical values
+    #         try:
+    #             values = [float(val) for val in match.group(1).split(',')]
+    #         except ValueError:
+    #             continue
+    #
+    #         # Ensure even number of values (real/imag pairs)
+    #         if len(values) % 2 != 0:
+    #             continue
+    #
+    #         # Set expected length
+    #         if expected_length is None:
+    #             expected_length = len(values)
+    #
+    #         # Skip data with wrong length
+    #         if len(values) != expected_length:
+    #             continue
+    #
+    #         # Reshape data to [subcarrier, real/imag] format
+    #         n_subcarriers = len(values) // 2
+    #         structured_data = np.zeros((n_subcarriers, 2))
+    #
+    #         for j in range(n_subcarriers):
+    #             real_idx = j * 2
+    #             imag_idx = j * 2 + 1
+    #             structured_data[j, 0] = values[real_idx]  # Real part
+    #             structured_data[j, 1] = values[imag_idx]  # Imaginary part
+    #
+    #         csi_data_list.append(structured_data)
+    #
+    #     # Check for valid data
+    #     if not csi_data_list:
+    #         return np.array([])
+    #
+    #     # Return 3D array: [sample, subcarrier, real/imag]
+    #     return np.array(csi_data_list)
     def _extract_csi_data(self, df):
         """
         从DataFrame中提取CSI数据
@@ -114,6 +176,11 @@ class CSIDataLoader:
 
             # Parse CSI data string
             data_str = row['data']
+
+            # 处理可能包含UIDS前缀的情况
+            if "UIDS-" in data_str and "CSI_DATA" in data_str:
+                uid_part, data_part = data_str.split(",CSI_DATA,", 1)
+                data_str = "CSI_DATA," + data_part
 
             # Extract data with regex
             match = re.search(r'\[(.*)\]', data_str)

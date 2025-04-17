@@ -400,6 +400,27 @@ class CSIVisualizationApp:
             print(f"Connection failed with code: {rc}")
             self.mqtt_status.config(text=f"Connect Error: {rc}", foreground="red")
 
+    # def on_mqtt_message(self, client, userdata, msg):
+    #     """MQTT message callback"""
+    #     try:
+    #         # 解析CSI数据
+    #         csi_str = msg.payload.decode()
+    #
+    #         # 显示消息大小
+    #         print(f"Received message of length: {len(csi_str)} bytes")
+    #
+    #         # 打印截断的消息用于调试
+    #         preview_len = 200 # 显示前50个字符
+    #         print(f"Message preview: {csi_str[:preview_len]}{'...' if len(csi_str) > preview_len else ''}")
+    #
+    #         # 将消息放入队列
+    #         if not self.csi_data_queue.full():
+    #             self.csi_data_queue.put(csi_str)
+    #
+    #             # 更新数据速率 (简单计算，不精确)
+    #             self.update_data_rate()
+    #     except Exception as e:
+    #         print(f"Error processing MQTT message: {e}")
     def on_mqtt_message(self, client, userdata, msg):
         """MQTT message callback"""
         try:
@@ -410,15 +431,17 @@ class CSIVisualizationApp:
             print(f"Received message of length: {len(csi_str)} bytes")
 
             # 打印截断的消息用于调试
-            preview_len = 200 # 显示前50个字符
+            preview_len = 200  # 显示前50个字符
             print(f"Message preview: {csi_str[:preview_len]}{'...' if len(csi_str) > preview_len else ''}")
 
-            # 将消息放入队列
-            if not self.csi_data_queue.full():
-                self.csi_data_queue.put(csi_str)
+            # 检查是否包含CSI_DATA（无论是否有UIDS前缀）
+            if "CSI_DATA" in csi_str:
+                # 将消息放入队列
+                if not self.csi_data_queue.full():
+                    self.csi_data_queue.put(csi_str)
 
-                # 更新数据速率 (简单计算，不精确)
-                self.update_data_rate()
+                    # 更新数据速率 (简单计算，不精确)
+                    self.update_data_rate()
         except Exception as e:
             print(f"Error processing MQTT message: {e}")
 
@@ -574,9 +597,63 @@ class CSIVisualizationApp:
         if self.amplitude_series:
             self.current_amplitude = np.array(self.amplitude_series)
 
+    # def parse_csi_string(self, csi_str):
+    #     """Parse CSI data string"""
+    #     try:
+    #         # 检查是否为CSI数据
+    #         if not csi_str.startswith("CSI_DATA"):
+    #             return None
+    #
+    #         # 首先找到引号包围的方括号部分
+    #         if '"[' in csi_str and ']"' in csi_str:
+    #             start_idx = csi_str.find('"[') + 2  # 跳过引号和左括号
+    #             end_idx = csi_str.rfind(']"')
+    #
+    #             if start_idx != -1 and end_idx != -1:
+    #                 data_part = csi_str[start_idx:end_idx]
+    #                 csi_values = [float(x.strip()) for x in data_part.split(',') if x.strip()]
+    #
+    #                 print(f"Found {len(csi_values)} CSI values")
+    #
+    #                 # 确保数据长度为偶数
+    #                 if len(csi_values) % 2 != 0:
+    #                     print(f"Warning: odd number of CSI values: {len(csi_values)}")
+    #                     # 在偶数个值的情况下处理
+    #                     # 舍弃最后一个值，保持偶数
+    #                     csi_values = csi_values[:-1] if len(csi_values) % 2 != 0 else csi_values
+    #
+    #                 # 重构数据为[subcarrier, real/imag]形式
+    #                 n_subcarriers = len(csi_values) // 2
+    #                 structured_data = np.zeros((1, n_subcarriers, 2))
+    #
+    #                 for j in range(n_subcarriers):
+    #                     real_idx = j * 2
+    #                     imag_idx = j * 2 + 1
+    #                     structured_data[0, j, 0] = csi_values[real_idx]  # 实部
+    #                     structured_data[0, j, 1] = csi_values[imag_idx]  # 虚部
+    #
+    #                 return structured_data
+    #             else:
+    #                 print("Could not find start/end quotes and brackets in data part")
+    #         else:
+    #             print("No CSI data array (quoted brackets) found in message")
+    #
+    #         return None
+    #
+    #     except Exception as e:
+    #         print(f"Error parsing CSI data: {e}")
+    #         import traceback
+    #         traceback.print_exc()
+    #         return None
     def parse_csi_string(self, csi_str):
         """Parse CSI data string"""
         try:
+            # 处理带有UIDS前缀的消息
+            if "UIDS-" in csi_str:
+                # 分离UIDS和实际CSI数据
+                uid_part, csi_part = csi_str.split(",CSI_DATA,", 1)
+                csi_str = "CSI_DATA," + csi_part
+
             # 检查是否为CSI数据
             if not csi_str.startswith("CSI_DATA"):
                 return None

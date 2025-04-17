@@ -184,7 +184,11 @@ class CSIBreathingVisualizationApp:
             self.log(f"Failed to connect to MQTT Broker with result code {rc}")
             self.update_connection_status(False)
 
-    def on_disconnect(self, client, userdata, rc, properties=None):
+    # def on_disconnect(self, client, userdata, rc, properties=None):
+    #     """Callback when disconnected from MQTT broker"""
+    #     self.log(f"Disconnected from MQTT Broker with result code {rc}")
+    #     self.update_connection_status(False)
+    def on_disconnect(self, client, userdata, rc, properties=None, reason_code=None, user_properties=None):
         """Callback when disconnected from MQTT broker"""
         self.log(f"Disconnected from MQTT Broker with result code {rc}")
         self.update_connection_status(False)
@@ -197,14 +201,58 @@ class CSIBreathingVisualizationApp:
         else:
             self.mqtt_status.config(text="Disconnected", style="Red.Status.TLabel")
 
+    # def on_message(self, client, userdata, msg, properties=None):
+    #     """Callback when receiving a message"""
+    #     try:
+    #         # Parse CSI data
+    #         message = msg.payload.decode()
+    #         if message.startswith("CSI_DATA"):
+    #             # Extract message ID for display
+    #             match = re.search(r'CSI_DATA,(\d+)', message)
+    #             if match:
+    #                 self.current_message_id = int(match.group(1))
+    #
+    #             # Parse the CSI data
+    #             csi_data = self.parse_csi_string(message)
+    #             if csi_data is not None:
+    #                 with self.data_lock:
+    #                     self.data_buffer.append(csi_data)
+    #                     self.time_buffer.append(time.time())
+    #                     self.total_samples += 1
+    #
+    #                 # Update reception rate
+    #                 current_time = time.time()
+    #                 time_diff = current_time - self.last_update_time
+    #                 if time_diff >= 1.0:  # Update rate calculation every second
+    #                     # Calculate samples per second
+    #                     if len(self.time_buffer) >= 2:
+    #                         time_span = self.time_buffer[-1] - self.time_buffer[0]
+    #                         if time_span > 0:
+    #                             self.recv_rate = (len(self.time_buffer) - 1) / time_span
+    #                     self.last_update_time = current_time
+    #
+    #                 # Check if it's time to estimate breathing rate
+    #                 if current_time - self.last_estimation_time > self.estimation_interval:
+    #                     self.queue.put("ESTIMATE")
+    #                     self.last_estimation_time = current_time
+    #
+    #     except Exception as e:
+    #         self.log(f"Error processing message: {e}")
     def on_message(self, client, userdata, msg, properties=None):
         """Callback when receiving a message"""
         try:
             # Parse CSI data
             message = msg.payload.decode()
-            if message.startswith("CSI_DATA"):
-                # Extract message ID for display
-                match = re.search(r'CSI_DATA,(\d+)', message)
+            # 修改条件检查，只要消息中包含"CSI_DATA"就处理
+            if "CSI_DATA" in message:
+                # 对于ID提取也需要修改，考虑UID前缀的情况
+                if "UIDS-" in message:
+                    # 先去除UID前缀
+                    _, rest = message.split(",", 1)
+                    match = re.search(r'CSI_DATA,(\d+)', rest)
+                else:
+                    match = re.search(r'CSI_DATA,(\d+)', message)
+
                 if match:
                     self.current_message_id = int(match.group(1))
 
@@ -234,10 +282,69 @@ class CSIBreathingVisualizationApp:
 
         except Exception as e:
             self.log(f"Error processing message: {e}")
+    # def parse_csi_string(self, csi_str):
+    #     """Parse CSI data string into numpy array"""
+    #     try:
+    #         # Split into fields for more robust parsing
+    #         parts = csi_str.split(",")
+    #
+    #         # Identify the part containing CSI data
+    #         data_part = None
+    #         for part in parts:
+    #             if '[' in part and ']' in part:
+    #                 data_part = part
+    #                 break
+    #
+    #         if not data_part:
+    #             # Try to find the CSI data array pattern
+    #             match = re.search(r'\[(.*)\]', csi_str)
+    #             if match:
+    #                 data_part = match.group(1)
+    #             else:
+    #                 return None
+    #
+    #         # Clean and parse the CSI values
+    #         data_part = data_part.replace('"', '').strip()
+    #         if data_part.startswith('['):
+    #             data_part = data_part[1:]
+    #         if data_part.endswith(']'):
+    #             data_part = data_part[:-1]
+    #
+    #         csi_values = [float(x) for x in data_part.split(',') if x.strip()]
+    #
+    #         # Ensure even number of values (real/imag pairs)
+    #         if len(csi_values) % 2 != 0:
+    #             return None
+    #
+    #         # Reshape data to [1, subcarrier, real/imag] format for estimator
+    #         n_subcarriers = len(csi_values) // 2
+    #         structured_data = np.zeros((1, n_subcarriers, 2))
+    #
+    #         for j in range(n_subcarriers):
+    #             real_idx = j * 2
+    #             imag_idx = j * 2 + 1
+    #             if real_idx < len(csi_values) and imag_idx < len(csi_values):
+    #                 structured_data[0, j, 0] = csi_values[real_idx]  # Real part
+    #                 structured_data[0, j, 1] = csi_values[imag_idx]  # Imaginary part
+    #
+    #         return structured_data[0]  # Return shape [subcarrier, real/imag]
+    #
+    #     except Exception as e:
+    #         self.log(f"Error parsing CSI data: {e}")
+    #         return None
+
+
 
     def parse_csi_string(self, csi_str):
         """Parse CSI data string into numpy array"""
         try:
+            # 检查并处理 UIDS 前缀
+            if "UIDS-" in csi_str:
+                # 按第一个逗号分割，移除 UIDS 部分
+                uid_parts = csi_str.split(",", 1)
+                if len(uid_parts) > 1:
+                    csi_str = uid_parts[1]  # 只保留逗号后的部分
+
             # Split into fields for more robust parsing
             parts = csi_str.split(",")
 
