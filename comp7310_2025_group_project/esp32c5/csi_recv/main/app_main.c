@@ -39,6 +39,7 @@
 #include "esp_netif.h"
 #include "esp_now.h"
 #include "esp_wifi.h"
+#include "esp_wifi_types_generic.h"
 #include "mqtt_client.h"
 #include "nvs_flash.h"
 #include <stdio.h>
@@ -173,7 +174,7 @@ void wifi_init() {
           {
               .ssid = WIFI_SSID,
               .password = WIFI_PASSWORD,
-              .threshold.authmode = AUTH_MODE,
+              .threshold.authmode = WIFI_AUTH_WPA2_PSK,
               // enable the line below only when using a mobile hotspot
               .scan_method = DEFAULT_SCAN_METHOD,
               .pmf_cfg = {.capable = true, .required = false},
@@ -249,11 +250,11 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
 
   wifi_pkt_rx_ctrl_phy_t *phy_info = (wifi_pkt_rx_ctrl_phy_t *)info;
   int written = snprintf(
-      ptr, remaining, "CSI_DATA,%d," MACSTR ",%d,%d,%d,%d,%d,%d,%d,%d,%d,%s",
-      s_count++, MAC2STR(info->mac), rx_ctrl->rssi, rx_ctrl->rate,
+      ptr, remaining, "%s,CSI_DATA,%d," MACSTR ",%d,%d,%d,%d,%d,%d,%d,%d,%d",
+      ALTER_INFO, s_count++, MAC2STR(info->mac), rx_ctrl->rssi, rx_ctrl->rate,
       rx_ctrl->noise_floor, phy_info->fft_gain, phy_info->agc_gain,
       rx_ctrl->channel, rx_ctrl->timestamp, rx_ctrl->sig_len,
-      rx_ctrl->rx_state, ALTER_INFO);
+      rx_ctrl->rx_state);
 
   ptr += written;
   remaining -= written;
