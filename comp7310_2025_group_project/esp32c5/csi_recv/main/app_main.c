@@ -249,11 +249,11 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info) {
 
   wifi_pkt_rx_ctrl_phy_t *phy_info = (wifi_pkt_rx_ctrl_phy_t *)info;
   int written = snprintf(
-      ptr, remaining, "CSI_DATA,%d," MACSTR ",%d,%d,%d,%d,%d,%d,%d,%d,%d",
+      ptr, remaining, "CSI_DATA,%d," MACSTR ",%d,%d,%d,%d,%d,%d,%d,%d,%d,%s",
       s_count++, MAC2STR(info->mac), rx_ctrl->rssi, rx_ctrl->rate,
       rx_ctrl->noise_floor, phy_info->fft_gain, phy_info->agc_gain,
       rx_ctrl->channel, rx_ctrl->timestamp, rx_ctrl->sig_len,
-      rx_ctrl->rx_state);
+      rx_ctrl->rx_state, ALTER_INFO);
 
   ptr += written;
   remaining -= written;
