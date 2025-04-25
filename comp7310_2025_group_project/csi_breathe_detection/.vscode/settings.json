@@ -1,0 +1,5 @@
+{
+    "command-runner.commands": {
+        "run": "conda activate gp && python csi_visualization_app.py",
+    }
+}

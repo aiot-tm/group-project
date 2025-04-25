@@ -30,6 +30,7 @@ class CSIVisualizationApp:
         # 创建数据队列和标志
         self.csi_data_queue = queue.Queue(maxsize=100)
         self.running = True
+        self.data_lock = threading.Lock() 
         self.motion_detected = False
         self.detection_history = []  # 检测历史
         self.display_buffer_size = 50  # 可视化缓冲区大小
@@ -86,49 +87,6 @@ class CSIVisualizationApp:
         # 在右侧面板中创建控制区域
         self.create_controls(control_frame)
 
-    def create_plots(self, parent):
-        """Create visualization plots"""
-        # 创建图形
-        self.fig = plt.figure(figsize=(10, 8), dpi=100)
-
-        # CSI振幅图形
-        self.ax1 = self.fig.add_subplot(311)  # 3行1列的第1个
-        self.ax1.set_title("CSI Amplitude")
-        self.ax1.set_ylabel("Amplitude")
-        self.ax1.grid(True)
-        self.amplitude_lines = []
-
-        # 方差和阈值图形
-        self.ax2 = self.fig.add_subplot(312)  # 3行1列的第2个
-        self.ax2.set_title("Amplitude Variance & Threshold")
-        self.ax2.set_ylabel("Variance")
-        self.ax2.grid(True)
-        self.variance_line, = self.ax2.plot([], [], 'b-', label='Amplitude Variance')
-        self.threshold_line, = self.ax2.plot([], [], 'r--', label='Detection Threshold')
-        self.ax2.legend()
-
-        # 检测结果图形
-        self.ax3 = self.fig.add_subplot(313)  # 3行1列的第3个
-        self.ax3.set_title("Motion Detection Result")
-        self.ax3.set_ylabel("State")
-        self.ax3.set_ylim(-0.1, 1.1)
-        self.ax3.set_yticks([0, 1])
-        self.ax3.set_yticklabels(['Static', 'Moving'])
-        self.ax3.grid(True)
-        self.detection_line, = self.ax3.plot([], [], 'g-', lw=2)
-
-        # 调整子图之间的间距
-        self.fig.tight_layout()
-
-        # 添加画布到界面
-        self.canvas = FigureCanvasTkAgg(self.fig, master=parent)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # 设置动画
-        self.ani = animation.FuncAnimation(
-            self.fig, self.update_plots, interval=100,
-            blit=False, cache_frame_data=False)
 
     def create_controls(self, parent):
         """Create control panel"""
@@ -223,96 +181,6 @@ class CSIVisualizationApp:
 
         ttk.Button(button_frame, text="Reset Stats", command=self.reset_stats).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Recalibrate", command=self.recalibrate).pack(side=tk.RIGHT, padx=5)
-
-    # 修改 update_plots 方法，确保正确处理数据和坐标轴
-    def update_plots(self, frame):
-        """Update visualization plots with time series data"""
-        # 更新CSI振幅图
-        if hasattr(self, 'current_amplitude') and self.current_amplitude is not None and len(
-                self.current_amplitude) > 0:
-            # 清除现有线条
-            for line in self.amplitude_lines:
-                line.remove()
-            self.amplitude_lines = []
-
-            # 获取振幅数据的时间点数和子载波数量
-            n_times, n_subcarriers = self.current_amplitude.shape
-
-            # 选择最有变化的5个子载波进行显示
-            if n_subcarriers > 5:
-                variance_per_sub = np.var(self.current_amplitude, axis=0)
-                top_subs = np.argsort(variance_per_sub)[-5:]
-            else:
-                top_subs = range(n_subcarriers)
-
-            # 创建X轴时间点
-            x_time = np.arange(n_times)
-
-            # 绘制每个选择的子载波随时间的变化
-            for i, sub_idx in enumerate(top_subs):
-                line, = self.ax1.plot(x_time, self.current_amplitude[:, sub_idx],
-                                      label=f'Subcarrier {sub_idx}')
-                self.amplitude_lines.append(line)
-
-            # 更新X轴范围以覆盖所有时间点
-            self.ax1.set_xlim(0, n_times)
-
-            # 更新Y轴范围，确保能看到数据变化
-            all_values = self.current_amplitude[:, top_subs].flatten()
-            if len(all_values) > 0:
-                min_val = np.min(all_values)
-                max_val = np.max(all_values)
-                y_margin = (max_val - min_val) * 0.1  # 10%的边距
-                self.ax1.set_ylim(min_val - y_margin, max_val + y_margin)
-
-            # 更新图例
-            self.ax1.legend(loc='upper right')
-
-            # 更新标题以显示最新消息ID
-            if self.last_message_id:
-                self.ax1.set_title(f"CSI Amplitude (Message ID: {self.last_message_id})")
-
-        # 更新方差和阈值图 - 关键修改
-        if self.variance_history and self.threshold_history:
-            # 确保使用numpy数组处理数据
-            x = np.arange(len(self.variance_history))
-
-            # 检查数据是否包含NaN值
-            if np.any(np.isnan(self.variance_history)) or np.any(np.isnan(self.threshold_history)):
-                print("警告: 方差或阈值历史中包含NaN值")
-            else:
-                # 更新数据
-                self.variance_line.set_data(x, self.variance_history)
-                self.threshold_line.set_data(x, self.threshold_history)
-
-                # 设置X轴范围 - 确保从0开始
-                self.ax2.set_xlim(0, max(1, len(self.variance_history)))
-
-                # 设置Y轴范围，确保总是有正值
-                if len(self.variance_history) > 0:
-                    max_val = max(max(self.variance_history), max(self.threshold_history)) * 1.1
-                    min_val = 0  # 强制Y轴从0开始
-                    # 如果最大值太小，给一个默认范围
-                    if max_val < 0.001:
-                        max_val = 0.05
-                    self.ax2.set_ylim(min_val, max_val)
-
-                    # 调试输出
-                    print(f"Y轴范围: {min_val} - {max_val}")
-
-        # 更新检测结果图 - 关键修改
-        if self.detection_buffer:
-            x = np.arange(len(self.detection_buffer))
-            self.detection_line.set_data(x, self.detection_buffer)
-
-            # 设置X轴范围 - 确保从0开始
-            self.ax3.set_xlim(0, max(1, len(self.detection_buffer)))
-
-            # 确保Y轴范围固定为0-1，加一点边距
-            self.ax3.set_ylim(-0.1, 1.1)
-
-        # 更新画布
-        self.canvas.draw_idle()
 
     def apply_threshold(self):
         """Apply new threshold and recalibrate detector"""
@@ -567,84 +435,120 @@ class CSIVisualizationApp:
                 traceback.print_exc()  # 添加更详细的错误信息
                 time.sleep(0.1)  # 出错后暂停一小段时间
 
+
+    # ───────────────── create_plots  ─────────────────────────────────
+    def create_plots(self, parent):
+        """Create visualization plots"""
+        self.fig = plt.figure(figsize=(10, 8), dpi=100)
+
+        # --- Amplitude ------------------------------------------------
+        self.ax1 = self.fig.add_subplot(311)
+        self.ax1.set_title("CSI Amplitude")
+        self.ax1.set_ylabel("Amplitude")
+        self.ax1.grid(True)
+        self.max_shown_subs = 5
+        self.amplitude_lines = []
+        for _ in range(self.max_shown_subs):          # create empty lines once
+            ln, = self.ax1.plot([], [], lw=1)
+            self.amplitude_lines.append(ln)
+        self.ax1.legend([f"S{i}" for i in range(self.max_shown_subs)],
+                        loc='upper right')
+
+        # --- Variance / threshold ------------------------------------
+        self.ax2 = self.fig.add_subplot(312)
+        self.ax2.set_title("Amplitude Variance & Threshold")
+        self.ax2.set_ylabel("Variance")
+        self.ax2.grid(True)
+        self.variance_line, = self.ax2.plot([], [], 'b-', label='Amp Var')
+        self.threshold_line, = self.ax2.plot([], [], 'r--', label='Threshold')
+        self.ax2.legend()
+
+        # --- Detection result ----------------------------------------
+        self.ax3 = self.fig.add_subplot(313)
+        self.ax3.set_title("Motion Detection Result")
+        self.ax3.set_ylabel("State")
+        self.ax3.set_ylim(-0.1, 1.1)
+        self.ax3.set_yticks([0, 1])
+        self.ax3.set_yticklabels(['Static', 'Moving'])
+        self.ax3.grid(True)
+        self.detection_line, = self.ax3.plot([], [], 'g-', lw=2)
+
+        self.fig.tight_layout()
+
+        self.canvas = FigureCanvasTkAgg(self.fig, master=parent)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # let blitting do the heavy work
+        self.ani = animation.FuncAnimation(
+            self.fig, self.update_plots, interval=100,
+            blit=True, cache_frame_data=False)
+
+    # ───────────────── update_plots  ─────────────────────────────────
+    def update_plots(self, _):
+        """Update the three subplots – this runs in the Tk thread."""
+        artists = []
+
+        # ---------- amplitude ----------------------------------------
+        with self.data_lock:
+            amp = getattr(self, 'current_amplitude', None)
+        if amp is not None and amp.size:
+            n_t, n_sc = amp.shape
+            # pick five most-variant sub-carriers once per frame
+            top = np.argsort(np.var(amp, axis=0))[-self.max_shown_subs:]
+            x = np.arange(n_t)
+            ymin, ymax = np.inf, -np.inf
+            for i, sc in enumerate(top):
+                y = amp[:, sc]
+                self.amplitude_lines[i].set_data(x, y)
+                ymin = min(ymin, y.min())
+                ymax = max(ymax, y.max())
+                artists.append(self.amplitude_lines[i])
+            self.ax1.set_xlim(0, n_t)
+            if ymin < ymax:                       # guard div/0
+                margin = (ymax - ymin) * 0.1
+                self.ax1.set_ylim(ymin - margin, ymax + margin)
+
+        # ---------- variance / threshold -----------------------------
+        if self.variance_history:
+            x = np.arange(len(self.variance_history))
+            self.variance_line.set_data(x, self.variance_history)
+            self.threshold_line.set_data(x, self.threshold_history)
+            self.ax2.set_xlim(0, max(1, len(x)))
+            y_max = max(max(self.variance_history), max(self.threshold_history)) * 1.1
+            self.ax2.set_ylim(0, y_max if y_max else 0.05)
+            artists += [self.variance_line, self.threshold_line]
+
+        # ---------- detection result ---------------------------------
+        if self.detection_buffer:
+            x = np.arange(len(self.detection_buffer))
+            self.detection_line.set_data(x, self.detection_buffer)
+            self.ax3.set_xlim(0, max(1, len(x)))
+            artists.append(self.detection_line)
+
+        return artists            # tell FuncAnimation what to blit
+
+    # ───────────────── process_for_visualization  ────────────────────
     def process_for_visualization(self, buffer):
-        """Process data for visualization - keep time series data"""
+        """Convert the newest CSI frame to amplitude & keep a ring-buffer."""
         if not buffer:
             return
 
-        # 创建时间序列数据存储
         if not hasattr(self, 'amplitude_series'):
-            # 初始化存储20个时间点的数据，每个时间点包含所有子载波的振幅
             self.amplitude_series = []
-            self.max_series_length = 50  # 保存50个时间点
+            self.max_series_length = 50
 
-        # 提取最近的一组CSI数据
-        recent_data = buffer[-1]
+        recent = buffer[-1]
+        amp = np.sqrt(recent[:, :, 0]**2 + recent[:, :, 1]**2)[0]  # (subcarriers,)
 
-        # 从CSI数据中提取振幅
-        real = recent_data[:, :, 0]
-        imag = recent_data[:, :, 1]
-        amplitude = np.sqrt(real ** 2 + imag ** 2)
-
-        # 添加到时间序列
-        self.amplitude_series.append(amplitude[0])  # 添加一个时间点的所有子载波振幅
-
-        # 限制序列长度
+        self.amplitude_series.append(amp)
         if len(self.amplitude_series) > self.max_series_length:
             self.amplitude_series.pop(0)
 
-        # 更新当前振幅数据为时间序列
-        if self.amplitude_series:
-            self.current_amplitude = np.array(self.amplitude_series)
-
-    # def parse_csi_string(self, csi_str):
-    #     """Parse CSI data string"""
-    #     try:
-    #         # 检查是否为CSI数据
-    #         if not csi_str.startswith("CSI_DATA"):
-    #             return None
-    #
-    #         # 首先找到引号包围的方括号部分
-    #         if '"[' in csi_str and ']"' in csi_str:
-    #             start_idx = csi_str.find('"[') + 2  # 跳过引号和左括号
-    #             end_idx = csi_str.rfind(']"')
-    #
-    #             if start_idx != -1 and end_idx != -1:
-    #                 data_part = csi_str[start_idx:end_idx]
-    #                 csi_values = [float(x.strip()) for x in data_part.split(',') if x.strip()]
-    #
-    #                 print(f"Found {len(csi_values)} CSI values")
-    #
-    #                 # 确保数据长度为偶数
-    #                 if len(csi_values) % 2 != 0:
-    #                     print(f"Warning: odd number of CSI values: {len(csi_values)}")
-    #                     # 在偶数个值的情况下处理
-    #                     # 舍弃最后一个值，保持偶数
-    #                     csi_values = csi_values[:-1] if len(csi_values) % 2 != 0 else csi_values
-    #
-    #                 # 重构数据为[subcarrier, real/imag]形式
-    #                 n_subcarriers = len(csi_values) // 2
-    #                 structured_data = np.zeros((1, n_subcarriers, 2))
-    #
-    #                 for j in range(n_subcarriers):
-    #                     real_idx = j * 2
-    #                     imag_idx = j * 2 + 1
-    #                     structured_data[0, j, 0] = csi_values[real_idx]  # 实部
-    #                     structured_data[0, j, 1] = csi_values[imag_idx]  # 虚部
-    #
-    #                 return structured_data
-    #             else:
-    #                 print("Could not find start/end quotes and brackets in data part")
-    #         else:
-    #             print("No CSI data array (quoted brackets) found in message")
-    #
-    #         return None
-    #
-    #     except Exception as e:
-    #         print(f"Error parsing CSI data: {e}")
-    #         import traceback
-    #         traceback.print_exc()
-    #         return None
+        with self.data_lock:      # <<< NEW: protect shared data
+            self.current_amplitude = np.vstack(self.amplitude_series)
+            
+            
     def parse_csi_string(self, csi_str):
         """Parse CSI data string"""
         try:
