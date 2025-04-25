@@ -385,6 +385,41 @@ class CSIVisualizationApp:
                             result = self.detector.detect(combined_data)
                             current_state = result['motion_detected']
 
+                            if len(buffer) >= buffer_size:
+                                combined_data = np.vstack(buffer)
+                                result = self.detector.detect(combined_data)
+
+                                # --- ①  raw variance & threshold ---------------------------------
+                                var  = float(result['features'].get('amp_variance_mean', 0.0))
+                                th   = float(result['threshold'])
+                                self.variance_history.append(var)
+                                self.threshold_history.append(th)
+
+                                # --- ②  visual motion state: 1  ↔  var >= th  --------------------
+                                current_state = 1 if var >= th else 0        # << visual state ONLY
+                                self.detection_history.append(current_state)
+
+                                # -----------------------------------------------------------------
+                                # keep the three history buffers exactly the same length
+                                for hist in (self.variance_history,
+                                            self.threshold_history,
+                                            self.detection_history):
+                                    if len(hist) > self.display_buffer_size:
+                                        hist.pop(0)
+
+                                # copy once for the Tk thread
+                                self.detection_buffer = self.detection_history.copy()
+
+                                # --- ③  still keep the detector’s filtered state for UI light ----
+                                filtered_state = result['motion_detected']   # ← unchanged
+                                if filtered_state != last_state:
+                                    last_state = filtered_state
+                                    self.motion_detected = filtered_state
+                                    self.root.after(0, self.update_detection_ui, filtered_state, result)
+
+                                # statistics panel (uses filtered_state as before)
+                                self.root.after(0, self.update_stats_ui, result)
+                                
                             # 更新检测结果历史 - 关键修改
                             self.detection_history.append(1 if current_state else 0)  # 确保使用0和1而非布尔值
 
